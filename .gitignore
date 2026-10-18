@@ -1,8 +1,12 @@
+.python-version
 .venv/
 .env
 __pycache__/
+src/deep_agent/__pycache__
 *.pyc
 .DS_Store
-study_plans/
+study_plan/
 .idea/
-uv.lock:
+uv.lock
+old/
+pyproject.toml
