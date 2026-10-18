@@ -1,9 +1,35 @@
 import os
+import re
+from pathlib import Path
 
 from deepagents import create_deep_agent
 from dotenv import load_dotenv
 
+from langchain_core.tools import tool
+
 load_dotenv()
+
+@tool
+def save_study_plan(area: str, sub_area: str, study_plan: str):
+    """Saves the generated study plan to a dedicated markdown file on disk.
+    Args:
+        area: The primary technical area (e.g., 'System Design', 'Python').
+        sub_area: The specific sub-area (e.g., 'Distributed Caching', 'AsyncIO').
+        content: The complete markdown content of the study plan.
+    """
+    def slugify(text: str) -> str:
+        text = text.lower().strip()
+        text = re.sub(r"[^\w\s-]", "", text)
+        return re.sub(r"[\s_]+", "-", text)
+
+    #Build dir path as study_plans/<area-subarea>/README.md
+    dir_name = f"{slugify(area)}_{slugify(sub_area)}"
+    target_dir = Path("study_plan")/dir_name
+    target_dir.mkdir(parents=True, exist_ok=True)
+    file_path = target_dir / "README.md"
+    file_path.write_text(study_plan, encoding="utf-8")
+
+    return f"Successfully saved study plan to {file_path}"
 
 SYSTEM_PROMPT = """You are an expert technical interview preparation coach.
 Your job is to help software engineers systematically prepare for technical interviews by designing structured, high-signal study plans.
@@ -17,9 +43,13 @@ When the user specifies an area and sub-area:
    - Common Interview Traps / Practice Questions for that sub-area.
 3. For every recommendation, explain *why* it matters and what specific takeaway to focus on.
 4. Keep the list focused (3 to 5 core items max) so the candidate isn't overwhelmed by choice.
+5. Always call the `save_study_plan` tool to save the plan to disk before concluding your response.
 """
 
-agent = create_deep_agent(model="google_genai:gemini-3.8-flash", system_prompt=SYSTEM_PROMPT)
+agent = create_deep_agent(
+    model="google_genai:gemini-3.8-flash",
+    tools=[save_study_plan],
+    system_prompt=SYSTEM_PROMPT)
 
 def stream_response(prompt: str):
     """Streams the agent's response to stdout token-by-token."""
