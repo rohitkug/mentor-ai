@@ -10,12 +10,11 @@ from langchain_core.tools import tool
 load_dotenv()
 
 @tool
-def save_study_plan(area: str, sub_area: str, study_plan: str):
+def save_study_plan(title: str, study_plan: str):
     """Saves the generated study plan to a dedicated markdown file on disk.
     Args:
-        area: The primary technical area (e.g., 'System Design', 'Python').
-        sub_area: The specific sub-area (e.g., 'Distributed Caching', 'AsyncIO').
-        content: The complete markdown content of the study plan.
+        title: A concise, human-readable 3 to 5 word title summarizing the topic (e.g., 'Redis Rate Limiting', 'JVM Garbage Collection Tuning').
+        study_plan: The complete markdown content of the plan.
     """
     def slugify(text: str) -> str:
         text = text.lower().strip()
@@ -23,18 +22,21 @@ def save_study_plan(area: str, sub_area: str, study_plan: str):
         return re.sub(r"[\s_]+", "-", text)
 
     #Build dir path as study_plans/<area-subarea>/README.md
-    dir_name = f"{slugify(area)}_{slugify(sub_area)}"
+    dir_name = f"{slugify(title)}"
     target_dir = Path("study_plan")/dir_name
     target_dir.mkdir(parents=True, exist_ok=True)
-    file_path = target_dir / "README.md"
-    file_path.write_text(study_plan, encoding="utf-8")
 
+    # Save a small metadata file or ensure the README starts with the title
+    file_path = target_dir / "README.md"
+    # If the LLM didn't already include the title as an H1, prepend it
+    content = study_plan if study_plan.startswith("# ") else f"# {title}\n\n{study_plan}"
+    file_path.write_text(content, encoding="utf-8")
     return f"Successfully saved study plan to {file_path}"
 
 SYSTEM_PROMPT = """You are an expert technical interview preparation coach.
 Your job is to help software engineers systematically prepare for technical interviews by designing structured, high-signal study plans.
 
-When the user specifies an area and sub-area:
+Based on the user prompt:
 1. Provide a step-by-step study order (from fundamental concepts to interview-specific patterns).
 2. For each step, recommend the best free resources:
    - Official Documentation & Specifications (authoritative grounding)
@@ -43,11 +45,23 @@ When the user specifies an area and sub-area:
    - Common Interview Traps / Practice Questions for that sub-area.
 3. For every recommendation, explain *why* it matters and what specific takeaway to focus on.
 4. Keep the list focused (3 to 5 core items max) so the candidate isn't overwhelmed by choice.
-5. Always call the `save_study_plan` tool to save the plan to disk before concluding your response.
+5. Generate a concise, professional 3 to 5 word title for the session.
+6. Always call the `save_study_plan` tool with your generated title and the complete study plan.
 """
 
+# SYSTEM_PROMPT = """You are an expert technical interview coach. Design structured, high-signal study plans for a given area/sub-area.
+#
+# Requirements:
+# 1. Provide a step-by-step study order (fundamentals to interview patterns).
+# 2. Recommend 3-5 core free resources across: Official Docs, Video Deep-Dives, Engineering Blogs/Whitepapers, and Interview Traps.
+# 3. For each resource, provide a brief 1-sentence takeaway/focus.
+# 4. Generate a 3-5 word professional title.
+# 5. Critical: Always invoke `save_study_plan` using the generated title and complete study plan. Do not summarize or chat before calling the tool.
+# """
+
 agent = create_deep_agent(
-    model="google_genai:gemini-3.8-flash",
+   # model="google_genai:gemini-3.8-flash",
+    model="google_genai:gemini-3.5-flash-lite",
     tools=[save_study_plan],
     system_prompt=SYSTEM_PROMPT)
 
