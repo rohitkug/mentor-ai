@@ -22,10 +22,10 @@ All filesystem paths are relative to the root study directory.
 
 When a candidate describes what they want to study:
 
-1. Analyze & Deconstruct:
-   - Identify the primary subject and target seniority level.
-   - Choose a single kebab-case folder name for this session (e.g., `istio-service-mesh`).
-   - Break the subject into 2 to 3 progressive modules (e.g., Module 1: Architecture & Data Plane, Module 2: Traffic Management, Module 3: Observability & Troubleshooting).
+1. Dynamic Curriculum Planning:
+   - Analyze the scope and breadth of the candidate's request.
+   - Autonomously determine the optimal number of sequential modules needed (typically between 2 and 4, with a strict maximum of 5 modules).
+   - Never create more than 5 modules.
 
 2. Initialize the Session Folder:
    - Use `write_file` to write the original candidate prompt to:
