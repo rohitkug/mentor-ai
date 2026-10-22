@@ -84,18 +84,44 @@ else:
             st.write(user_prompt)
 
         try:
-            with st.spinner("Orchestrating research across modules..."):
-                agent.invoke({"messages": [{"role": "user", "content": user_prompt}]})
+            # Interactive real-time progress container
+            with st.status("🎯 Architecting and researching study plan...", expanded=True) as status_box:
+                todo_placeholder = st.empty()
 
+                # Stream state updates to capture todos as they change
+                for chunk in agent.stream(
+                        {"messages": [{"role": "user", "content": user_prompt}]},
+                        stream_mode="values",
+                ):
+                    todos = chunk.get("todos", [])
+                    if todos:
+                        # Render status list dynamically
+                        todo_lines = []
+                        for item in todos:
+                            status = item.get("status")
+                            content = item.get("content")
+                            if status == "completed":
+                                todo_lines.append(f"- ✅ ~~{content}~~")
+                            elif status == "in_progress":
+                                todo_lines.append(f"- ⏳ **{content}**")
+                            else:
+                                todo_lines.append(f"- ⚪ {content}")
+
+                        todo_placeholder.markdown("\n".join(todo_lines))
+
+                status_box.update(label="✅ Study plan complete!", state="complete", expanded=False)
+
+            # Reload plans from disk and set active chat
+            st.session_state.chats = get_existing_plans()
+            folders = [f for f in STUDY_DIR.iterdir() if f.is_dir() and list(f.glob("*.md"))]
+            if folders:
+                newest = max(folders, key=lambda f: f.stat().st_mtime)
+                if not (newest / "prompt.txt").exists():
+                    (newest / "prompt.txt").write_text(str(user_prompt), encoding="utf-8")
                 st.session_state.chats = get_existing_plans()
-                folders = [f for f in STUDY_DIR.iterdir() if f.is_dir() and list(f.glob("*.md"))]
-                if folders:
-                    newest = max(folders, key=lambda f: f.stat().st_mtime)
-                    if not (newest / "prompt.txt").exists():
-                        (newest / "prompt.txt").write_text(str(user_prompt), encoding="utf-8")
-                    st.session_state.chats = get_existing_plans()
-                    st.session_state.active_chat = newest.name
+                st.session_state.active_chat = newest.name
 
-                st.rerun()
+            st.rerun()
         except Exception as err:
             st.error(f"Error generating study plan: {err}")
+
