@@ -3,8 +3,11 @@ from pathlib import Path
 
 from deepagents import create_deep_agent
 from deepagents.backends import FilesystemBackend
-from langchain.agents.middleware import TodoListMiddleware
 from dotenv import load_dotenv
+
+load_dotenv()
+
+from langchain.agents.middleware import TodoListMiddleware
 
 from langchain_core.tools import tool
 from langgraph.checkpoint.memory import MemorySaver
@@ -12,7 +15,34 @@ from langgraph.types import interrupt
 
 from deep_agent.module_subagent import module_subagent
 
-load_dotenv()
+
+@tool
+def run_diagnostic_quiz(quiz_title: str, questions: list[dict]) -> str:
+    """Pauses execution to administer a short diagnostic quiz to assess the candidate's baseline knowledge.
+
+    Args:
+        quiz_title: Title of the diagnostic assessment (e.g., 'Java Virtual Threads Readiness Quiz').
+        questions: List 10 question dicts. Each dict MUST contain:
+            - 'question': The question text.
+            - 'subtopic': The specific concept being tested (e.g., 'Carrier Thread Pinning').
+            - 'difficulty': 'Foundational', 'Intermediate', or 'Advanced'.
+            - 'options': List of 4 option strings (do not include letter prefixes like 'A.').
+            - 'correct_index': Integer index (0, 1, 2, or 3) of the correct option.
+            - 'explanation': Detailed explanation of why the correct answer is right and why common traps fail.
+    """
+    submission = interrupt({
+        "type": "diagnostic_quiz",
+        "quiz_title": quiz_title,
+        "questions": questions,
+    })
+
+    lines = ["Diagnostic Quiz Results:"]
+    for item in submission.get("results", []):
+        lines.append(
+            f"- [{item.get('difficulty', 'General')}] {item.get('subtopic', 'Topic')}: "
+            f"{item.get('status')} (Candidate selected: {item.get('selected')})"
+        )
+    return "\n".join(lines)
 
 @tool
 def request_curriculum_approval(modules: list[dict], summary: str) -> str:
@@ -41,56 +71,45 @@ STUDY_DIR = Path("study_plan").resolve()
 STUDY_DIR.mkdir(parents=True, exist_ok=True)
 
 SUPERVISOR_PROMPT = """You are a Principal Engineering Lead and Director of Technical Curriculum.
-Your mission is to architect an exhaustive, masterclass-depth interview preparation syllabus tailored to a candidate's specific goals.
+Your mission is to architect an exhaustive, masterclass-depth interview preparation syllabus tailored to a candidate's baseline knowledge.
 
 You coordinate execution using:
+- `run_diagnostic_quiz`: To assess the candidate's baseline knowledge before designing the syllabus.
+- `request_curriculum_approval`: To get human approval on the tailored syllabus before launching subagents.
 - `write_todos`: To plan, sequence, and track the progress of every module.
-- `write_file`: To write the curriculum overview and prompt records.
+- `write_file` / `ls` / `read_file`: To write the curriculum overview and verify files.
 - `task`: To delegate deep-dive research for each module to `module_researcher`.
-- `ls` / `read_file`: To verify generated files.
 
 When a candidate describes what they want to study:
 
-1. Domain-Aware Curriculum Architecture:
-   - Classify the request by its technical archetype (e.g., Distributed System, Language API / Library, Storage Engine, or Concurrency Primitive).
-   - Autonomously determine the optimal number of modules (strict maximum of 9).
-   - Formulate custom, domain-accurate module titles tailored to that specific topic:
-     * For Systems: Focus on architecture, data/control paths, and failure modes.
-     * For Languages/APIs: Focus on pipeline/execution mechanics, advanced patterns, and performance/pitfalls.
-     * For Storage/Concurrency: Focus on memory layout, lock/thread contention, and throughput bottlenecks.
-   - Choose a single, concise kebab-case folder slug (e.g., `java-streams-api` or `istio-service-mesh`). All files for this session MUST be saved under `/<folder-slug>/`.
+1. Step 1 — Diagnostic Assessment (`run_diagnostic_quiz`):
+   - Immediately call `run_diagnostic_quiz` with 10 well-crafted multiple-choice questions spanning Foundational, Intermediate, and Advanced concepts for the requested topic.
+   - Wait for the quiz results before designing the curriculum.
 
-2. Task Planning via `write_todos`:
-   - Immediately create a complete todo list before taking any action. For example:
-     * "Initialize curriculum directory and overview for <Subject>" (status: "in_progress")
-     * "Research Module 1: <Module Title>" (status: "pending")
-     * "Research Module 2: <Module Title>" (status: "pending")
-     * ...
-     * "Verify all module artifacts and finalize curriculum" (status: "pending")
-
-3. Initialize the Session Folder:
+2. Step 2 — Calibrated Curriculum Architecture & Approval (`request_curriculum_approval`):
+   - Analyze the candidate's quiz performance:
+     * **Don't Know:** Candidate needs a clean, first-principles buildup from scratch.
+     * **Incorrect:** Candidate has an active misconception—prioritize myth-busting and clear mental models.
+     * **Correct:** Candidate knows the basics—compress elementary definitions and focus on advanced internals, edge cases, and staff-level trade-offs.
+   - Choose a single, concise kebab-case folder slug (e.g., `java-virtual-threads`). All files MUST be saved under `/<folder-slug>/`.
    - Save the raw user query to `/<folder-slug>/prompt.txt` using `write_file`.
-   - Write a rich syllabus index to `/<folder-slug>/00_overview.md` using `write_file`. Include:
-     * Program Title & Target Seniority Level
-     * Curriculum Roadmap Table (Module Number, Title, Core Focus)
-     * Recommended Study Sequence & Timeline (e.g., Week 1 vs. Week 2)
-   - Call request_curriculum_approval with the proposed modules and wait for human confirmation.
-   - Once confirmed (or revised per feedback), call write_todos and delegate each module to module_researcher.
+   - Write `/<folder-slug>/00_overview.md` containing the Program Title, Diagnostic Assessment Summary, Curriculum Roadmap Table, and Study Sequence.
+   - Call `request_curriculum_approval` with your tailored `modules` (maximum 9) and a `summary` explaining how the quiz results shaped the syllabus.
 
-4. High-Context Delegation to `module_researcher`:
-   - For each module in the syllabus, update its task status to "in_progress" in `write_todos`.
-   - Call the `module_researcher` subagent via `task` with a comprehensive technical brief:
-     * **Module Number & Title:** (e.g., "Module 1: Architecture, Data Plane & Control Plane Fundamentals")
-     * **Target Level:** (e.g., Senior / Staff)
-     * **Mandatory Topics & Primitives:** List 4-5 specific systems, data structures, APIs, or components this module MUST cover in depth.
-     * **Destination Path:** The exact path where the subagent must save its file:
-       `/<folder-slug>/01_<module_slug>.md`, `/<folder-slug>/02_<module_slug>.md`, etc.
-   - Once the subagent finishes and confirms file creation, mark the task as "completed" in `write_todos`.
+3. Step 3 — Task Planning (`write_todos`):
+   - Once the human approves the curriculum, create a complete todo list with `write_todos` covering each module to be researched and final verification.
 
-5. Final Verification & Completion:
-   - Run `ls` on `/<folder-slug>/` to confirm all module files are present.
-   - Mark the final verification task as "completed" in `write_todos`.
-   - Present a concise, encouraging executive summary of the curriculum to the candidate, highlighting the core themes covered across the modules.
+4. Step 4 — High-Context Delegation to `module_researcher`:
+   - For each module, mark its todo as `"in_progress"` in `write_todos`.
+   - Call `module_researcher` via `task` with a detailed brief:
+     * **Module Number & Title**
+     * **Calibration Notes from Quiz:** Tell the subagent which concepts the candidate got Correct, Incorrect, or marked Don't Know so it can calibrate depth.
+     * **Mandatory Topics & Primitives:** 4-5 specific mechanisms, APIs, or failure modes to cover.
+     * **Destination Path:** `/<folder-slug>/01_<module_slug>.md`, `/<folder-slug>/02_<module_slug>.md`, etc.
+   - Once the subagent completes the file, mark its todo as `"completed"` in `write_todos`.
+
+5. Step 5 — Final Verification:
+   - Run `ls` on `/<folder-slug>/` to confirm all module files are written, mark all todos `"completed"`, and provide a concise wrap-up summary.
 """
 
 checkpointer = MemorySaver()
@@ -100,7 +119,7 @@ agent = create_deep_agent(
    # model="google_genai:gemini-3.8-flash",
     model="google_genai:gemini-3.5-flash-lite",
     backend=FilesystemBackend(root_dir=str(STUDY_DIR), virtual_mode=True),
-    tools=[request_curriculum_approval],
+    tools=[run_diagnostic_quiz, request_curriculum_approval],
     subagents=[module_subagent],
     middleware=[TodoListMiddleware()],
     checkpointer=checkpointer,
