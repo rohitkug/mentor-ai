@@ -7,9 +7,34 @@ from langchain.agents.middleware import TodoListMiddleware
 from dotenv import load_dotenv
 
 from langchain_core.tools import tool
+from langgraph.checkpoint.memory import MemorySaver
+from langgraph.types import interrupt
+
 from deep_agent.module_subagent import module_subagent
 
 load_dotenv()
+
+@tool
+def request_curriculum_approval(modules: list[dict], summary: str) -> str:
+    """Pauses execution to present the proposed curriculum to the user for approval or adjustments.
+
+    Args:
+        modules: List of proposed modules, each with 'title' and 'scope'.
+        summary: Brief rationale for this curriculum breakdown.
+    """
+    # interrupt() halts the graph and sends payload to the caller
+    user_feedback = interrupt({
+        "type": "curriculum_review",
+        "summary": summary,
+        "modules": modules,
+    })
+
+    # When resumed, user_feedback contains {"approved": True/False, "feedback": "..."}
+    if user_feedback.get("approved"):
+        return f"Curriculum approved. Proceed with subagent research. Additional notes: {user_feedback.get('feedback', 'None')}"
+    else:
+        return f"User requested revisions: {user_feedback.get('feedback')}. Please adjust the module outline before proceeding."
+
 
 # Ensure local study_plan folder exists
 STUDY_DIR = Path("study_plan").resolve()
@@ -49,6 +74,8 @@ When a candidate describes what they want to study:
      * Program Title & Target Seniority Level
      * Curriculum Roadmap Table (Module Number, Title, Core Focus)
      * Recommended Study Sequence & Timeline (e.g., Week 1 vs. Week 2)
+   - Call request_curriculum_approval with the proposed modules and wait for human confirmation.
+   - Once confirmed (or revised per feedback), call write_todos and delegate each module to module_researcher.
 
 4. High-Context Delegation to `module_researcher`:
    - For each module in the syllabus, update its task status to "in_progress" in `write_todos`.
@@ -66,14 +93,17 @@ When a candidate describes what they want to study:
    - Present a concise, encouraging executive summary of the curriculum to the candidate, highlighting the core themes covered across the modules.
 """
 
+checkpointer = MemorySaver()
 
 # Configure Deep Agent with native FilesystemBackend
 agent = create_deep_agent(
    # model="google_genai:gemini-3.8-flash",
     model="google_genai:gemini-3.5-flash-lite",
     backend=FilesystemBackend(root_dir=str(STUDY_DIR), virtual_mode=True),
+    tools=[request_curriculum_approval],
     subagents=[module_subagent],
     middleware=[TodoListMiddleware()],
+    checkpointer=checkpointer,
     system_prompt=SUPERVISOR_PROMPT)
 
 def stream_response(prompt: str):
