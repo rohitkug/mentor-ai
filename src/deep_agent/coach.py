@@ -63,8 +63,10 @@ def request_curriculum_approval(modules: list[dict], summary: str) -> str:
     if user_feedback.get("approved"):
         return f"Curriculum approved. Proceed with subagent research. Additional notes: {user_feedback.get('feedback', 'None')}"
     else:
-        return f"User requested revisions: {user_feedback.get('feedback')}. Please adjust the module outline before proceeding."
-
+        return (
+            f"User requested revisions: {user_feedback.get('feedback')}. "
+            f"Please update 00_overview.md and call request_curriculum_approval again with the revised modules."
+        )
 
 # Ensure local study_plan folder exists
 STUDY_DIR = Path("study_plan").resolve()
